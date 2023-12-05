@@ -93,7 +93,7 @@ func (i *Initiator) Suspend() error {
 }
 
 // Start starts the NVMe initiator with the given transportAddress and transportServiceID
-func (i *Initiator) Start(transportAddress, transportServiceID string) (err error) {
+func (i *Initiator) Start(transportAddress, transportServiceID string, upgradeRequired bool) (err error) {
 	defer func() {
 		if err != nil {
 			i.logger.WithError(err).Errorf("Failed to start NVMe initiator %s", i.Name)
@@ -130,8 +130,22 @@ func (i *Initiator) Start(transportAddress, transportServiceID string) (err erro
 		}
 	}
 
+	cleanUpDmDevice := true
+	if upgradeRequired {
+		dmDeviceExists, err := i.linearDmDeviceExists()
+		if err != nil {
+			return errors.Wrapf(err, "failed to check linear dm device for NVMe initiator %s", i.Name)
+		}
+
+		if !dmDeviceExists {
+			return fmt.Errorf("linear dm device doesn't exist for NVMe initiator %s", i.Name)
+		}
+
+		cleanUpDmDevice = false
+	}
+
 	i.logger.Infof("Stopping NVMe initiator blindly before starting")
-	if err := i.stopWithoutLock(); err != nil {
+	if err := i.stopWithoutLock(cleanUpDmDevice); err != nil {
 		return errors.Wrapf(err, "failed to stop the mismatching NVMe initiator %s before starting", i.Name)
 	}
 
@@ -172,22 +186,36 @@ func (i *Initiator) Start(transportAddress, transportServiceID string) (err erro
 		return errors.Wrapf(err, "failed to load device info after starting NVMe initiator %s", i.Name)
 	}
 
-	i.logger.Infof("Creating linear dm device for NVMe initiator %s", i.Name)
-	if err := i.createLinearDmDevice(); err != nil {
-		return errors.Wrapf(err, "failed to create linear dm device for NVMe initiator %s", i.Name)
-	}
+	if upgradeRequired {
+		i.logger.Infof("Reloading linear dm device for NVMe initiator %s", i.Name)
+		if err := i.reloadLinearDmDevice(); err != nil {
+			return errors.Wrapf(err, "failed to reload linear dm device for NVMe initiator %s", i.Name)
+		}
 
-	i.logger.Infof("Creating endpoint %v", i.Endpoint)
-	if err := i.makeEndpoint(); err != nil {
-		return err
-	}
+		i.logger.Infof("Resuming linear dm device for NVMe initiator %s", i.Name)
+		if err := i.resumeLinearDmDevice(); err != nil {
+			return errors.Wrapf(err, "failed to resume linear dm device for NVMe initiator %s", i.Name)
+		}
 
-	i.logger.Infof("Launched NVMe initiator: %+v", i)
+		i.logger.Infof("Relaunched NVMe initiator: %+v", i)
+	} else {
+		i.logger.Infof("Creating linear dm device for NVMe initiator %s", i.Name)
+		if err := i.createLinearDmDevice(); err != nil {
+			return errors.Wrapf(err, "failed to create linear dm device for NVMe initiator %s", i.Name)
+		}
+
+		i.logger.Infof("Creating endpoint %s", i.Endpoint)
+		if err := i.makeEndpoint(); err != nil {
+			return errors.Wrapf(err, "failed to create endpoint for NVMe initiator %s", i.Name)
+		}
+
+		i.logger.Infof("Launched NVMe initiator: %+v", i)
+	}
 
 	return nil
 }
 
-func (i *Initiator) Stop() error {
+func (i *Initiator) Stop(cleanUpDmDevice bool) error {
 	if i.hostProc != "" {
 		lock := nsfilelock.NewLockWithTimeout(util.GetHostNamespacePath(i.hostProc), LockFile, LockTimeout)
 		if err := lock.Lock(); err != nil {
@@ -196,16 +224,18 @@ func (i *Initiator) Stop() error {
 		defer lock.Unlock()
 	}
 
-	return i.stopWithoutLock()
+	return i.stopWithoutLock(cleanUpDmDevice)
 }
 
-func (i *Initiator) stopWithoutLock() error {
-	if err := i.removeEndpoint(); err != nil {
-		return err
-	}
+func (i *Initiator) stopWithoutLock(cleanUpDmDevice bool) error {
+	if cleanUpDmDevice {
+		if err := i.removeEndpoint(); err != nil {
+			return err
+		}
 
-	if err := i.removeLinearDmDevice(); err != nil {
-		return err
+		if err := i.removeLinearDmDevice(); err != nil {
+			return err
+		}
 	}
 
 	if err := DisconnectTarget(i.SubsystemNQN, i.executor); err != nil {
@@ -392,6 +422,18 @@ func (i *Initiator) createLinearDmDevice() error {
 	i.dev.Export.Minor = minor
 
 	return nil
+}
+
+func (i *Initiator) linearDmDeviceExists() (bool, error) {
+	dmDevPath := getDmDevicePath(i.Name)
+	if _, err := os.Stat(dmDevPath); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+
+	return true, nil
 }
 
 func validateDiskCreation(path string, timeout int) error {
