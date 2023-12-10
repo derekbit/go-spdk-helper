@@ -528,6 +528,24 @@ func (c *Client) BdevRaidRemoveBaseBdev(name string) (removed bool, err error) {
 	return removed, json.Unmarshal(cmdOutput, &removed)
 }
 
+// BdevRaidGrowBaseBdev adds a base bdev to a raid bdev, growing the raid's size if needed
+//
+// "raidName": Required. The name of the raid bdev to add the base bdev to.
+// "baseBdev": Required. The name of the base bdev to add to the raid bdev.
+func (c *Client) BdevRaidGrowBaseBdev(raidName, baseBdev string) (removed bool, err error) {
+	req := spdktypes.BdevRaidGrowBaseBdevRequest{
+		RaidName: raidName,
+		BaseBdev: baseBdev,
+	}
+
+	cmdOutput, err := c.jsonCli.SendCommand("bdev_raid_grow_base_bdev", req)
+	if err != nil {
+		return false, err
+	}
+
+	return removed, json.Unmarshal(cmdOutput, &removed)
+}
+
 // BdevNvmeAttachController constructs NVMe bdev.
 //
 //	"name": Name of the NVMe controller. And the corresponding bdev nvme name are same as the nvme namespace name, which is `{ControllerName}n1`

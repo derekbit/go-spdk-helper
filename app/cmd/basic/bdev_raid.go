@@ -20,6 +20,7 @@ func BdevRaidCmd() cli.Command {
 			BdevRaidDeleteCmd(),
 			BdevRaidGetCmd(),
 			BdevRaidRemoveBaseBdevCmd(),
+			BdevRaidGrowBaseBdevCmd(),
 		},
 	}
 }
@@ -150,6 +151,44 @@ func bdevRaidRemoveBaseBdev(c *cli.Context) error {
 	}
 
 	deleted, err := spdkCli.BdevRaidRemoveBaseBdev(c.Args().First())
+	if err != nil {
+		return err
+	}
+
+	return util.PrintObject(deleted)
+}
+
+func BdevRaidGrowBaseBdevCmd() cli.Command {
+	return cli.Command{
+		Name:  "grow-base-bdev",
+		Usage: "adds a base bdev to a raid bdev, growing the raid's size if needed: grow-base-bdev --raid-name <RAID NAME> --bdev-name <BASE BDEV NAME>",
+		Flags: []cli.Flag{
+			cli.StringFlag{
+				Name:     "raid-name",
+				Usage:    "the name of the raid bdev to add the base bdev to",
+				Required: true,
+			},
+			cli.StringFlag{
+				Name:     "bdev-name",
+				Usage:    "the name of the base bdev to add to the raid bdev",
+				Required: true,
+			},
+		},
+		Action: func(c *cli.Context) {
+			if err := bdevRaidGrowBaseBdev(c); err != nil {
+				logrus.WithError(err).Fatalf("Failed to run grow base bdev command")
+			}
+		},
+	}
+}
+
+func bdevRaidGrowBaseBdev(c *cli.Context) error {
+	spdkCli, err := client.NewClient(context.Background())
+	if err != nil {
+		return err
+	}
+
+	deleted, err := spdkCli.BdevRaidGrowBaseBdev(c.String("raid-name"), c.String("bdev-name"))
 	if err != nil {
 		return err
 	}
