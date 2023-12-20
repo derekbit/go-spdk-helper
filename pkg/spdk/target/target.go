@@ -19,7 +19,7 @@ const (
 )
 
 // SetupTarget setups the spdk_tgt with the given args
-func SetupTarget(spdkDir string, setupArgs []string, execute func(name string, args []string) (string, error)) (err error) {
+func SetupTarget(spdkDir string, setupArgs []string, execute func(name string, args []string, timeout time.Duration) (string, error)) (err error) {
 	setupArgsInStr := ""
 	for _, arg := range setupArgs {
 		setupArgsInStr = fmt.Sprintf("%s %s", setupArgsInStr, arg)
@@ -36,10 +36,10 @@ func SetupTarget(spdkDir string, setupArgs []string, execute func(name string, a
 		"reset",
 	}
 
-	if _, err := execute("sh", resetOpts); err != nil {
+	if _, err := execute("sh", resetOpts, types.ExecuteTimeout); err != nil {
 		return err
 	}
-	if _, err := execute("sh", setupOpts); err != nil {
+	if _, err := execute("sh", setupOpts, types.ExecuteTimeout); err != nil {
 		return err
 	}
 
