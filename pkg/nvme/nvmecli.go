@@ -25,7 +25,11 @@ type Device struct {
 }
 
 type DiscoveryPageEntry struct {
-	PortID  uint16 `json:"portid"`
+	// TODO:
+	// Old libjson-c-devel (libjson-c-devel-0.13-3.3.1.aarch64) adds double quote around portid,
+	// and results in marshal error on arm64 environment.
+	// Currently, longhorn doesn't require portid, so we comment it out for prevent the marshal error.
+	//PortID  uint16 `json:"portid"`
 	TrsvcID string `json:"trsvcid"`
 	Subnqn  string `json:"subnqn"`
 	Traddr  string `json:"traddr"`
