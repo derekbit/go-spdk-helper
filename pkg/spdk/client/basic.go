@@ -928,3 +928,34 @@ func (c *Client) NvmfSubsystemGetListeners(nqn, tgtName string) (listenerList []
 
 	return listenerList, json.Unmarshal(cmdOutput, &listenerList)
 }
+
+// BdevVirtioAttachController creates new initiator Virtio SCSI or Virtio Block and expose all found bdevs.
+func (c *Client) BdevVirtioAttachController(name, trtype, traddr, devType string) (bdevName string, err error) {
+	req := spdktypes.BdevVirtioAttachControllerRequest{
+		Name:    name,
+		Trtype:  trtype,
+		Traddr:  traddr,
+		DevType: devType,
+	}
+
+	cmdOutput, err := c.jsonCli.SendCommand("bdev_virtio_attach_controller", req)
+	if err != nil {
+		return "", err
+	}
+
+	return bdevName, json.Unmarshal(cmdOutput, &bdevName)
+}
+
+// BdevVirtioDetachController removes a Virtio device.
+func (c *Client) BdevVirtioDetachController(name string) (deleted bool, err error) {
+	req := spdktypes.BdevVirtioDetachControllerRequest{
+		Name: name,
+	}
+
+	cmdOutput, err := c.jsonCli.SendCommand("bdev_virtio_detach_controller", req)
+	if err != nil {
+		return false, err
+	}
+
+	return deleted, json.Unmarshal(cmdOutput, &deleted)
+}
