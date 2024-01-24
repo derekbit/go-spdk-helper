@@ -57,7 +57,6 @@ func BindCmd() cli.Command {
 }
 
 func bind(c *cli.Context) error {
-	logrus.Infof("Debug ==> %v", c.GlobalString("host-proc"))
 	executor, err := util.NewExecutor(c.GlobalString("host-proc"))
 	if err != nil {
 		return err

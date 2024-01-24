@@ -2,6 +2,7 @@ package ns
 
 import (
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/pkg/errors"
@@ -61,8 +62,7 @@ func (nsexec *Executor) prepareCommandArgs(envs []string, binary string, args []
 		}
 	}
 	if len(envs) > 0 {
-		cmdArgs = append(cmdArgs, "env", "-i")
-		cmdArgs = append(cmdArgs, envs...)
+		cmdArgs = append(cmdArgs, "env", "-i", strings.Join(envs, " "))
 	}
 
 	cmdArgs = append(cmdArgs, binary)
