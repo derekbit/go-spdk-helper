@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 
 	"github.com/longhorn/go-common-libs/exec"
 	"github.com/longhorn/go-common-libs/proc"
@@ -65,7 +66,11 @@ func (nsexec *Executor) prepareCommandArgs(envs []string, binary string, args []
 	}
 
 	cmdArgs = append(cmdArgs, binary)
-	return append(cmdArgs, args...)
+	cmdArgs = append(cmdArgs, args...)
+
+	logrus.Infof("Debug ==> %v", cmdArgs)
+
+	return cmdArgs
 }
 
 // Execute executes the command in the namespace. If NsDirectory is empty,
