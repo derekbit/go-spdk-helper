@@ -296,7 +296,7 @@ func (s *TestSuite) TestSPDKBasic(c *C) {
 	initiator, err := nvme.NewInitiator(raidName, nqn, nvme.HostProc)
 	c.Assert(err, IsNil)
 
-	dmDeviceBusy, err := initiator.Start(types.LocalIP, defaultPort1, true)
+	dmDeviceBusy, err := initiator.Start(types.LocalIP, defaultPort1, false)
 	c.Assert(dmDeviceBusy, Equals, false)
 	c.Assert(err, IsNil)
 	defer func() {
