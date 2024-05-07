@@ -1,10 +1,13 @@
 package client
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"strings"
 
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 
 	spdktypes "github.com/longhorn/go-spdk-helper/pkg/spdk/types"
 )
@@ -793,17 +796,34 @@ func (c *Client) NvmfGetSubsystems(nqn, tgtName string) (subsystemList []spdktyp
 	return subsystemList, json.Unmarshal(cmdOutput, &subsystemList)
 }
 
+func generateRandomId(len int) (string, error) {
+	bytes := make([]byte, len)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes), nil
+}
+
 // NvmfSubsystemAddNs constructs an NVMe over Fabrics target subsystem..
 //
 //	"nqn": Required. Subsystem NQN.
 //
 //	"bdevName": Required. Name of bdev to expose as a namespace.
 func (c *Client) NvmfSubsystemAddNs(nqn, bdevName string) (nsid uint32, err error) {
-	req := spdktypes.NvmfSubsystemAddNsRequest{
-		Nqn:       nqn,
-		Namespace: spdktypes.NvmfSubsystemNamespace{BdevName: bdevName},
+	nguid, err := generateRandomId(16)
+	if err != nil {
+		return 0, err
 	}
 
+	req := spdktypes.NvmfSubsystemAddNsRequest{
+		Nqn: nqn,
+		Namespace: spdktypes.NvmfSubsystemNamespace{
+			BdevName: bdevName,
+			Nguid:    nguid,
+		},
+	}
+
+	logrus.Infof("Debug ======> bdevName=%v uuid=%v", bdevName, req.Namespace.Nguid)
 	cmdOutput, err := c.jsonCli.SendCommand("nvmf_subsystem_add_ns", req)
 	if err != nil {
 		return 0, err
