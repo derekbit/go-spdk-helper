@@ -28,3 +28,5 @@ require (
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	golang.org/x/exp v0.0.0-20241204233417-43b7b7cde48d // indirect
 )
+
+replace github.com/longhorn/go-common-libs v0.0.0-20241208100509-e1932c65c078 => github.com/derekbit/go-common-libs v0.0.0-20241213135153-57bc1bc8e5bc
