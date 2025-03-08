@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/sirupsen/logrus"
 
@@ -298,6 +299,8 @@ func discovery(hostID, hostNQN, ip, port string, executor *commonns.Executor) ([
 	}
 
 	logrus.Infof("Debug ======> discover output: %s", jsonStr)
+
+	time.Sleep(36000 * time.Second)
 
 	err = json.Unmarshal([]byte(jsonStr), &output)
 	if err != nil {
