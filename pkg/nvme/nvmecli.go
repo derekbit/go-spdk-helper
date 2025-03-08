@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/sirupsen/logrus"
+
 	commonns "github.com/longhorn/go-common-libs/ns"
 
 	"github.com/longhorn/go-spdk-helper/pkg/types"
@@ -278,6 +280,8 @@ func discovery(hostID, hostNQN, ip, port string, executor *commonns.Executor) ([
 	//		]
 	//	  }
 
+	logrus.Infof("Debug ======> %s %v", nvmeBinary, opts)
+
 	// nvme discover does not respect the -s option, so we need to filter the output
 	outputStr, err := executor.Execute(nil, nvmeBinary, opts, types.ExecuteTimeout)
 	if err != nil {
@@ -292,6 +296,8 @@ func discovery(hostID, hostNQN, ip, port string, executor *commonns.Executor) ([
 	var output struct {
 		Entries []DiscoveryPageEntry `json:"records"`
 	}
+
+	logrus.Infof("Debug ======> discover output: %s", jsonStr)
 
 	err = json.Unmarshal([]byte(jsonStr), &output)
 	if err != nil {
