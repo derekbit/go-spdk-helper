@@ -3,6 +3,7 @@ module github.com/longhorn/go-spdk-helper
 go 1.25.3
 
 require (
+	github.com/avast/retry-go/v4 v4.7.0
 	github.com/c9s/goprocinfo v0.0.0-20210130143923-c95fcf8c64a8
 	github.com/cockroachdb/errors v1.12.0
 	github.com/longhorn/go-common-libs v0.0.0-20260120075236-9a9dafa0a7ea
