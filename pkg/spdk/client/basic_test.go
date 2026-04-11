@@ -64,7 +64,7 @@ func runJSONRPCRequestTest(t *testing.T, fn func(*Client) error, verify func(t *
 func TestNvmfSubsystemAddNsUsesDefaultANAGroup(t *testing.T) {
 	runJSONRPCRequestTest(t,
 		func(cli *Client) error {
-			_, err := cli.NvmfSubsystemAddNs("nqn.test", "bdev0", "nguid0")
+			_, err := cli.NvmfSubsystemAddNs("nqn.test", "bdev0", "nguid0", "")
 			return err
 		},
 		func(t *testing.T, method string, params map[string]interface{}) {

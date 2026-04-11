@@ -119,7 +119,7 @@ func nvmfCreateSubsystem(c *cli.Context) error {
 		return err
 	}
 
-	created, err := spdkCli.NvmfCreateSubsystem(c.Args().First())
+	created, err := spdkCli.NvmfCreateSubsystem(c.Args().First(), 0, 0)
 	if err != nil {
 		return err
 	}
@@ -224,7 +224,7 @@ func nvmfSubsystemAddNs(c *cli.Context) error {
 		return err
 	}
 
-	added, err := spdkCli.NvmfSubsystemAddNs(c.String("nqn"), c.String("bdev-name"), c.String("nguid"))
+	added, err := spdkCli.NvmfSubsystemAddNs(c.String("nqn"), c.String("bdev-name"), c.String("nguid"), "")
 	if err != nil {
 		return err
 	}
