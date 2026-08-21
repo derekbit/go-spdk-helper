@@ -41,6 +41,7 @@ func main() {
 		basic.LogCmd(),
 		basic.UblkCmd(),
 		basic.SpdkKillInstanceCmd(),
+		basic.CleanupLocalV2DevicesCmd(),
 
 		advanced.DeviceCmd(),
 		advanced.ExposeCmd(),
