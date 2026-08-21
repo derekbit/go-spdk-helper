@@ -40,7 +40,10 @@ func CleanupLocalV2DevicesCmd() cli.Command {
 func cleanupLocalV2Devices(c *cli.Context) error {
 	hostProc := c.String("host-proc")
 
-	executor, err := util.NewExecutor(hostProc)
+	// nvme/dmsetup binaries live in this (the instance-manager container's) mount
+	// namespace, not the host's, so enumerate subsystems via the container proc.
+	// hostProc (/host/proc) is only used by NewInitiator for its per-volume lock.
+	executor, err := util.NewExecutor(commontypes.ProcDirectory)
 	if err != nil {
 		return err
 	}
