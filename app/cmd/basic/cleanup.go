@@ -20,8 +20,8 @@ func CleanupLocalV2DevicesCmd() cli.Command {
 		Flags: []cli.Flag{
 			cli.StringFlag{
 				Name:  "host-proc",
-				Usage: fmt.Sprintf("The host proc path of namespace executor. By default %v", commontypes.ProcDirectory),
-				Value: commontypes.ProcDirectory,
+				Usage: fmt.Sprintf("The host proc path of namespace executor. By default %v", commontypes.HostProcDirectory),
+				Value: commontypes.HostProcDirectory,
 			},
 		},
 		Usage: "Clean up local Longhorn v2 (NVMe/TCP backed) device-mapper devices and endpoints whose frontend initiator lives on this node. Intended for the v2 instance-manager pre-stop hook.",
