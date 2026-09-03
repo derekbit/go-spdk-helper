@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"math/rand"
 	"net"
-	"os"
 	"sync/atomic"
 	"time"
 
@@ -38,8 +37,9 @@ type Client struct {
 	sem               chan interface{}
 	msgWrapperQueue   chan *messageWrapper
 	respReceiverQueue chan *Response
+	cancelQueue       chan *messageWrapper
 
-	// TODO: may need to launch a cleanup mechanism for the entries that has been there for a long time.
+	// responseChans and responseChanInfoMap are owned by the dispatcher goroutine only.
 	responseChans       map[uint32]chan *Response
 	responseChanInfoMap map[uint32]string
 }
@@ -48,6 +48,13 @@ type messageWrapper struct {
 	method       string
 	params       interface{}
 	responseChan chan *Response
+
+	// cancelled is set by the caller once it stops waiting, so the dispatcher never puts a
+	// request on the wire that nobody will consume. Both fields are only read/written by the
+	// dispatcher apart from the caller's Store, hence the atomics.
+	cancelled  atomic.Bool
+	sent       atomic.Bool
+	assignedID atomic.Uint32
 }
 
 func NewClient(ctx context.Context, conn net.Conn) *Client {
@@ -69,6 +76,7 @@ func NewClient(ctx context.Context, conn net.Conn) *Client {
 		sem:                 make(chan interface{}, DefaultConcurrentLimit),
 		msgWrapperQueue:     make(chan *messageWrapper, DefaultConcurrentLimit),
 		respReceiverQueue:   make(chan *Response, DefaultConcurrentLimit),
+		cancelQueue:         make(chan *messageWrapper, DefaultConcurrentLimit),
 		responseChans:       make(map[uint32]chan *Response),
 		responseChanInfoMap: make(map[uint32]string),
 	}
@@ -93,16 +101,6 @@ func (c *Client) SendMsgWithTimeout(method string, params interface{}, timeout t
 				Params:      params,
 				ErrorDetail: err,
 			}
-		}
-
-		// For debug purpose
-		stdenc := json.NewEncoder(os.Stdin)
-		stdenc.SetIndent("", "\t")
-		if encodeErr := stdenc.Encode(msg); encodeErr != nil {
-			logrus.WithError(encodeErr).Warn("failed to encode the request message")
-		}
-		if encodeErr := stdenc.Encode(&resp); encodeErr != nil {
-			logrus.WithError(encodeErr).Warn("failed to encode the response message")
 		}
 	}()
 
@@ -157,20 +155,44 @@ func (c *Client) handleShutdown() {
 }
 
 func (c *Client) handleSend(msgWrapper *messageWrapper) {
+	// The caller already gave up. Sending now would make spdk_tgt execute a request whose
+	// effect nobody expects any more, arbitrarily late.
+	if msgWrapper.cancelled.Load() {
+		logrus.Warnf("Dropping the already abandoned request before sending it, method %s, params %+v", msgWrapper.method, msgWrapper.params)
+		return
+	}
+
 	id := c.idCounter
 
 	if err := c.encoder.Encode(NewMessage(id, msgWrapper.method, msgWrapper.params)); err != nil {
-		logrus.WithError(err).Errorf("Failed to encode during handleSend for method %s, params %+v", msgWrapper.method, msgWrapper.params)
-
-		// In case of the cached error info of the old encoder fails the following response, it's better to recreate the encoder.
-		c.encoder = json.NewEncoder(c.conn)
-		c.encoder.SetIndent("", "\t")
+		// json.Encoder marshals into one buffer and issues a single Write, so a failure here may
+		// still have put a partial message on the wire. The JSON stream is then desynchronized
+		// and every subsequent request/response on it is unreliable, so tear the connection down
+		// instead of silently continuing with a fresh encoder.
+		logrus.WithError(err).Errorf("Failed to encode during handleSend for method %s, params %+v, closing the possibly desynchronized connection", msgWrapper.method, msgWrapper.params)
+		if closeErr := c.conn.Close(); closeErr != nil {
+			logrus.WithError(closeErr).Warn("Failed to close the SPDK JSON RPC connection after an encoding failure")
+		}
+		close(msgWrapper.responseChan)
 		return
 	}
 
 	c.idCounter++
+	msgWrapper.assignedID.Store(id)
+	msgWrapper.sent.Store(true)
 	c.responseChans[id] = msgWrapper.responseChan
 	c.responseChanInfoMap[id] = fmt.Sprintf("method: %s, params: %+v", msgWrapper.method, msgWrapper.params)
+}
+
+// handleCancel drops the bookkeeping of a request whose caller stopped waiting, so that
+// responseChans does not grow without bound.
+func (c *Client) handleCancel(msgWrapper *messageWrapper) {
+	if !msgWrapper.sent.Load() {
+		return
+	}
+	id := msgWrapper.assignedID.Load()
+	delete(c.responseChans, id)
+	delete(c.responseChanInfoMap, id)
 }
 
 func (c *Client) handleRecv(resp *Response) {
@@ -199,6 +221,8 @@ func (c *Client) dispatcher() {
 			return
 		case msg := <-c.msgWrapperQueue:
 			c.handleSend(msg)
+		case msg := <-c.cancelQueue:
+			c.handleCancel(msg)
 		case resp := <-c.respReceiverQueue:
 			c.handleRecv(resp)
 		}
@@ -235,7 +259,14 @@ func (c *Client) read() {
 			select {
 			case c.respReceiverQueue <- &resp:
 			case <-queueTimer.C:
-				logrus.Errorf("Response receiver queue is blocked for over %v second when sending response: %+v", DefaultQueueBlockingTimeout, resp)
+				// Dropping the response would leave the caller waiting for its full timeout, so
+				// keep waiting instead and only report the stall.
+				logrus.Errorf("Response receiver queue is blocked for over %v when sending response: %+v", DefaultQueueBlockingTimeout, resp)
+				select {
+				case c.respReceiverQueue <- &resp:
+				case <-c.ctx.Done():
+					return
+				}
 			}
 		}
 	}
@@ -288,6 +319,15 @@ func (c *Client) SendMsgAsyncWithTimeout(method string, params interface{}, time
 		responseChan: responseChan,
 	}
 
+	cancel := func() {
+		msgWrapper.cancelled.Store(true)
+		select {
+		case c.cancelQueue <- msgWrapper:
+		default:
+			logrus.Warnf("Cancel queue is full, leaking the response channel of method %s", method)
+		}
+	}
+
 	select {
 	case <-c.ctx.Done():
 		return nil, fmt.Errorf("context done during async message send, method %s, params %+v", method, params)
@@ -298,12 +338,14 @@ func (c *Client) SendMsgAsyncWithTimeout(method string, params interface{}, time
 
 	select {
 	case <-c.ctx.Done():
+		cancel()
 		return nil, fmt.Errorf("context done during async message send, method %s, params %+v", method, params)
 	case resp = <-responseChan:
 		if resp == nil {
 			return nil, fmt.Errorf("received nil response during async message send, maybe the response channel somehow is closed, method %s, params %+v", method, params)
 		}
 	case <-timer.C:
+		cancel()
 		return nil, fmt.Errorf("timeout %v waiting for response during async message send, method %s, params %+v", timeout, method, params)
 	}
 
