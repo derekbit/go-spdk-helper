@@ -1028,6 +1028,10 @@ func (i *Initiator) stopWithoutLock(spdkClient *client.Client, dmDeviceAndEndpoi
 					if returnErrorForBusyDevice {
 						return true, err
 					}
+					// The removal genuinely failed. Callers that tolerate a busy device
+					// only see the boolean, so record the reason here, otherwise a stop
+					// that did not stop anything looks like a success.
+					i.logger.WithError(err).Warn("Linear dm device is still busy, the stop left it in place")
 					dmDeviceIsBusy = true
 				} else {
 					return false, err
