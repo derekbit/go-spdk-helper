@@ -29,6 +29,11 @@ const (
 	// device in uninterruptible sleep and cannot be undone from user space. Must stay
 	// below defaultCtrlLossTmo.
 	defaultFastIOFailTmo = 15
+	// NvmeControllerStateLive is the state nvme-cli reports for a usable path.
+	NvmeControllerStateLive = "live"
+	// NvmeControllerStateDeleting prefixes the states of a path the kernel is already
+	// tearing down (e.g. "deleting", "deleting (no IO)").
+	NvmeControllerStateDeleting = "deleting"
 )
 
 type Device struct {

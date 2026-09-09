@@ -268,22 +268,6 @@ func (i *Initiator) ReconnectNVMeTCPPath(transportAddress, transportServiceID st
 	return i.executeNVMeTCPPathOp(transportAddress, transportServiceID, "reconnect", i.ensureNVMeTCPPathWithoutLock)
 }
 
-// DisconnectNVMeTCPTarget disconnects a target
-func (i *Initiator) DisconnectNVMeTCPTarget() error {
-	if i.NVMeTCPInfo == nil {
-		return fmt.Errorf("failed to DisconnectNVMeTCPTarget because nvmeTCPInfo is nil")
-	}
-	if i.hostProc != "" {
-		lock, err := i.newLock("DisconnectNVMeTCPTarget")
-		if err != nil {
-			return err
-		}
-		defer lock.Unlock()
-	}
-
-	return DisconnectTarget(i.NVMeTCPInfo.SubsystemNQN, i.executor)
-}
-
 func (i *Initiator) connectNVMeTCPPathWithoutLock(transportAddress, transportServiceID string) error {
 	if reused, err := i.reuseExistingNVMeTCPPathWithoutLock(transportAddress, transportServiceID); err == nil {
 		if reused {
@@ -1011,7 +995,7 @@ func (i *Initiator) stopWithoutLock(spdkClient *client.Client, dmDeviceAndEndpoi
 
 	// stopping NvmeTcp initiator
 	if i.NVMeTCPInfo != nil {
-		err = DisconnectTarget(i.NVMeTCPInfo.SubsystemNQN, i.executor)
+		err = DisconnectUsableTargetPaths(i.NVMeTCPInfo.SubsystemNQN, i.executor)
 		if err != nil {
 			return dmDeviceIsBusy, errors.Wrapf(err, "failed to disconnect target for NVMe/TCP initiator %s", i.Name)
 		}
@@ -1103,7 +1087,7 @@ func (i *Initiator) WaitForControllerLive(transportAddress, transportServiceID s
 				for _, path := range sys.Paths {
 					controllerIP, controllerPort := GetIPAndPortFromControllerAddress(path.Address)
 					if util.IsSameNvmeAddr(controllerIP, transportAddress) && controllerPort == transportServiceID {
-						if path.State == "live" {
+						if path.State == NvmeControllerStateLive {
 							i.logger.Infof("NVMe controller %s for %s:%s reached live state",
 								path.Name, transportAddress, transportServiceID)
 							return nil
