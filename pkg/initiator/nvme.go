@@ -211,10 +211,16 @@ func GetDevices(ip, port, nqn string, executor *commonns.Executor) (devices []De
 
 	res := []Device{}
 	for _, d := range devices {
-		match := false
 		if d.SubsystemNQN != nqn {
 			continue
 		}
+		if len(d.Namespaces) == 0 {
+			continue
+		}
+		// A path being torn down disappears from the per-device subsystem listing,
+		// leaving no controller to match against. Without a requested address the
+		// namespace device itself already identifies the device.
+		match := ip == "" && port == ""
 		for _, c := range d.Controllers {
 			controllerIP, controllerPort := GetIPAndPortFromControllerAddress(c.Address)
 			if ip != "" && !util.IsSameNvmeAddr(ip, controllerIP) {
@@ -225,9 +231,6 @@ func GetDevices(ip, port, nqn string, executor *commonns.Executor) (devices []De
 			}
 			match = true
 			break
-		}
-		if len(d.Namespaces) == 0 {
-			continue
 		}
 		if match {
 			res = append(res, d)
