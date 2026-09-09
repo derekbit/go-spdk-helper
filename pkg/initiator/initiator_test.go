@@ -535,6 +535,106 @@ func canExecuteInDir(dir string) bool {
 	return cmd.Run() == nil
 }
 
+// fakeDmsetupScript reports an existing, active dm device whose table maps depDevice.
+// When the table is not expected to change, suspend/reload/resume fail the test.
+func fakeDmsetupScript(depDevice string, allowTableChange bool) string {
+	reject := "echo \"unexpected $1\" >&2; exit 1"
+	if allowTableChange {
+		reject = "exit 0"
+	}
+	return `#!/bin/sh
+case "$1" in
+	deps) echo "1 dependencies  : (` + depDevice + `)" ;;
+	info)
+		if [ "$2" = "--columns" ]; then
+			echo "vol-replace 253:7 L--w 253 7 1 1 0"
+		else
+			echo "State:             ACTIVE"
+		fi
+		;;
+	suspend|reload|resume) ` + reject + ` ;;
+esac
+exit 0
+`
+}
+
+// The plain invocation and the -J one both contain "MAJ:MIN", so dispatch on -J.
+// sourceMajMin is what the source device reports, which is how a table naming a
+// reused device is told apart from one that still maps it.
+func fakeLsblkScript(sourceMajMin string) string {
+	return `#!/bin/sh
+case "$*" in
+	*-J*/dev/nvme0n1) echo '{"blockdevices":[{"maj:min":"` + sourceMajMin + `"}]}' ;;
+	*-J*) echo '{"blockdevices":[{"maj:min":"253:7"}]}' ;;
+	*) echo "nvme0n1 259:0" ;;
+esac
+exit 0
+`
+}
+
+const testSourceMajMin = "259:0"
+
+func newReplaceTargetTestInitiator(c *C) *Initiator {
+	executor, err := newExecutorWithoutNamespace()
+	c.Assert(err, IsNil)
+
+	return &Initiator{
+		Name: "vol-replace",
+		dev: &util.LonghornBlockDevice{
+			Source: util.BlockDevice{Name: "nvme0n1", Major: 259, Minor: 0},
+		},
+		executor: executor,
+		logger:   logrus.New(),
+	}
+}
+
+// Suspending to reload a table that needs no change is what deadlocks when the old
+// path of the namespace head is still draining.
+func (s *InitiatorTestSuite) TestReplaceDmDeviceTargetSkipsUnneededTableChange(c *C) {
+	restorePath := setupFakeCommandPath(c, map[string]string{
+		"dmsetup": fakeDmsetupScript("nvme0n1", false),
+		"lsblk":   fakeLsblkScript(testSourceMajMin),
+	})
+	defer restorePath()
+
+	i := newReplaceTargetTestInitiator(c)
+
+	c.Assert(i.replaceDmDeviceTarget(), IsNil)
+	c.Assert(i.dev.Export.Name, Equals, "vol-replace")
+	c.Assert(i.dev.Export.Major, Equals, 253)
+	c.Assert(i.dev.Export.Minor, Equals, 7)
+}
+
+func (s *InitiatorTestSuite) TestReplaceDmDeviceTargetReloadsOnDeviceChange(c *C) {
+	restorePath := setupFakeCommandPath(c, map[string]string{
+		"dmsetup":           fakeDmsetupScript("nvme1n1", true),
+		"lsblk":             fakeLsblkScript(testSourceMajMin),
+		util.BlockdevBinary: "#!/bin/sh\necho 8\n",
+	})
+	defer restorePath()
+
+	i := newReplaceTargetTestInitiator(c)
+
+	c.Assert(i.replaceDmDeviceTarget(), IsNil)
+	c.Assert(i.dev.Export.Major, Equals, 253)
+	c.Assert(i.dev.Export.Minor, Equals, 7)
+}
+
+// The table names the device the initiator resolved, but the name has since been
+// handed to a different one, so the target still has to be replaced. The stub rejects
+// suspend, which is how the attempt is made visible.
+func (s *InitiatorTestSuite) TestReplaceDmDeviceTargetReloadsOnReusedDeviceName(c *C) {
+	restorePath := setupFakeCommandPath(c, map[string]string{
+		"dmsetup": fakeDmsetupScript("nvme0n1", false),
+		"lsblk":   fakeLsblkScript("259:5"),
+	})
+	defer restorePath()
+
+	i := newReplaceTargetTestInitiator(c)
+
+	c.Assert(i.replaceDmDeviceTarget(), ErrorMatches, ".*failed to suspend.*")
+}
+
 func TestSelectControllerForNVMeDeviceSkipsStaleController(t *testing.T) {
 	device := Device{
 		SubsystemNQN: "nqn.test",

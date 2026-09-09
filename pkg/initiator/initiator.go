@@ -434,6 +434,35 @@ func (i *Initiator) resumeLinearDmDevice() error {
 	return util.DmsetupResume(i.Name, i.executor)
 }
 
+// isDmDeviceTargetUpToDate reports whether the linear dm device already maps the
+// device the initiator resolved to.
+//
+// With NVMe native multipath every path of a subsystem shares one namespace head
+// (e.g. /dev/nvme0n1), so reconnecting to a new target address usually yields the
+// very same block device the dm table was built on.
+func (i *Initiator) isDmDeviceTargetUpToDate() (bool, error) {
+	if i.dev == nil || i.dev.Source.Name == "" {
+		return false, fmt.Errorf("initiator device source is not initialized")
+	}
+
+	depDevices, err := i.findDependentDevices(i.Name)
+	if err != nil {
+		return false, err
+	}
+	if len(depDevices) != 1 || depDevices[0] != i.dev.Source.Name {
+		return false, nil
+	}
+
+	// A name outlives the device that carried it, so a table left over from a previous
+	// target can name the current device without mapping it.
+	major, minor, err := util.GetDeviceNumbers(filepath.Join("/dev", depDevices[0]), i.executor)
+	if err != nil {
+		return false, err
+	}
+
+	return major == i.dev.Source.Major && minor == i.dev.Source.Minor, nil
+}
+
 func (i *Initiator) replaceDmDeviceTarget() error {
 	deferredRemove, err := i.IsDeferredRemoveSet()
 	if err != nil {
@@ -448,8 +477,27 @@ func (i *Initiator) replaceDmDeviceTarget() error {
 		return errors.Wrapf(err, "failed to check if linear dm device is suspended for initiator %s", i.Name)
 	}
 
+	// Reloading an identical table still requires a suspend, which blocks until the
+	// I/O queued on the target device drains. That is exactly what cannot happen while
+	// the old path of the namespace head is still being torn down, so skip the whole
+	// dance when the table needs no change at all.
+	upToDate, err := i.isDmDeviceTargetUpToDate()
+	if err != nil {
+		i.logger.WithError(err).Warn("Failed to check whether the linear dm device already maps the current device, falling back to replacing the target")
+	} else if upToDate {
+		i.logger.Info("Linear dm device already maps the current device, skipping the target replacement")
+		if suspended {
+			if err := i.resumeLinearDmDevice(); err != nil {
+				return errors.Wrapf(err, "failed to resume linear dm device for initiator %s", i.Name)
+			}
+		}
+		return i.loadDmDeviceNumbers()
+	}
+
 	if !suspended {
-		if err := i.suspendLinearDmDevice(true, false); err != nil {
+		// Never freeze the filesystem here: the target device is being replaced because
+		// the previous one is gone, so the sync that lockfs performs would never finish.
+		if err := i.suspendLinearDmDevice(true, true); err != nil {
 			return errors.Wrapf(err, "failed to suspend linear dm device for initiator %s", i.Name)
 		}
 	}
@@ -1346,8 +1394,17 @@ func (i *Initiator) createLinearDmDevice() error {
 		return err
 	}
 
-	// Get the device numbers
-	major, minor, err := util.GetDeviceNumbers(dmDevPath, i.executor)
+	return i.loadDmDeviceNumbers()
+}
+
+// loadDmDeviceNumbers records the device numbers of the linear dm device as the
+// export of the initiator, which is what the endpoint device node is created from.
+func (i *Initiator) loadDmDeviceNumbers() error {
+	if i.dev == nil {
+		return fmt.Errorf("found nil device for linear dm device number loading")
+	}
+
+	major, minor, err := util.GetDeviceNumbers(getDmDevicePath(i.Name), i.executor)
 	if err != nil {
 		return err
 	}
@@ -1520,18 +1577,7 @@ func (i *Initiator) reloadLinearDmDevice() error {
 		return err
 	}
 
-	// Reload the device numbers
-	dmDevPath := getDmDevicePath(i.Name)
-	major, minor, err := util.GetDeviceNumbers(dmDevPath, i.executor)
-	if err != nil {
-		return err
-	}
-
-	i.dev.Export.Name = i.Name
-	i.dev.Export.Major = major
-	i.dev.Export.Minor = minor
-
-	return nil
+	return i.loadDmDeviceNumbers()
 }
 
 func getDmDevicePath(name string) string {
