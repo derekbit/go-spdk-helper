@@ -23,6 +23,12 @@ const (
 	defaultCtrlLossTmo    = 30
 	defaultKeepAliveTmo   = 5
 	defaultReconnectDelay = 2
+	// defaultFastIOFailTmo makes the kernel fail the I/O queued on a namespace whose
+	// paths are all down. Its default is off, meaning the I/O is requeued for as long
+	// as any controller of the subsystem lingers, which wedges every holder of the
+	// device in uninterruptible sleep and cannot be undone from user space. Must stay
+	// below defaultCtrlLossTmo.
+	defaultFastIOFailTmo = 15
 )
 
 type Device struct {
@@ -320,6 +326,8 @@ func connect(hostID, hostNQN, nqn, transpotType, ip, port string, nrIoQueues int
 		"--ctrl-loss-tmo", strconv.Itoa(defaultCtrlLossTmo),
 		"--keep-alive-tmo", strconv.Itoa(defaultKeepAliveTmo),
 		"--reconnect-delay", strconv.Itoa(defaultReconnectDelay),
+		// Spelled with underscores, unlike the options above.
+		"--fast_io_fail_tmo", strconv.Itoa(defaultFastIOFailTmo),
 		"-o", "json",
 	}
 
