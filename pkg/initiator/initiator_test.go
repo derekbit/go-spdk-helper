@@ -534,3 +534,39 @@ func canExecuteInDir(dir string) bool {
 	cmd := exec.Command(probePath)
 	return cmd.Run() == nil
 }
+
+func TestSelectControllerForNVMeDeviceSkipsStaleController(t *testing.T) {
+	device := Device{
+		SubsystemNQN: "nqn.test",
+		Controllers: []Controller{
+			{Controller: "nvme0", Address: "traddr=10.0.0.1 trsvcid=4420", State: "connecting"},
+			{Controller: "nvme1", Address: "traddr=10.0.0.2 trsvcid=4420", State: NvmeControllerStateLive},
+		},
+	}
+
+	controller, err := selectControllerForNVMeDevice(device, "", "", "")
+	if err != nil {
+		t.Fatalf("unexpected error selecting controller: %v", err)
+	}
+	if controller.Controller != "nvme1" {
+		t.Fatalf("expected live controller nvme1, got %s", controller.Controller)
+	}
+}
+
+func TestSelectControllerForNVMeDevicePrefersLiveControllerAtSameAddress(t *testing.T) {
+	device := Device{
+		SubsystemNQN: "nqn.test",
+		Controllers: []Controller{
+			{Controller: "nvme0", Address: "traddr=10.0.0.1 trsvcid=4420", State: "connecting"},
+			{Controller: "nvme3", Address: "traddr=10.0.0.1 trsvcid=4420", State: NvmeControllerStateLive},
+		},
+	}
+
+	controller, err := selectControllerForNVMeDevice(device, "10.0.0.1", "4420", "")
+	if err != nil {
+		t.Fatalf("unexpected error selecting controller: %v", err)
+	}
+	if controller.Controller != "nvme3" {
+		t.Fatalf("expected live controller nvme3, got %s", controller.Controller)
+	}
+}

@@ -1178,11 +1178,26 @@ func selectControllerForNVMeDevice(device Device, transportAddress, transportSer
 	}
 
 	if transportAddress != "" && transportServiceID != "" {
+		matched := Controller{}
+		found := false
 		for _, controller := range device.Controllers {
 			controllerAddress, controllerServiceID := GetIPAndPortFromControllerAddress(controller.Address)
-			if util.IsSameNvmeAddr(controllerAddress, transportAddress) && controllerServiceID == transportServiceID {
+			if !util.IsSameNvmeAddr(controllerAddress, transportAddress) || controllerServiceID != transportServiceID {
+				continue
+			}
+			if controller.State == NvmeControllerStateLive {
 				return controller, nil
 			}
+			// A stop that leaves a dead path behind and a reconnect to the same target
+			// put two controllers on one address.
+			if !found {
+				matched, found = controller, true
+			}
+		}
+		if found {
+			logrus.Warnf("No live NVMe controller at address %s:%s for subsystem %s, using %s in %q state",
+				transportAddress, transportServiceID, device.SubsystemNQN, matched.Controller, matched.State)
+			return matched, nil
 		}
 	}
 
@@ -1194,8 +1209,16 @@ func selectControllerForNVMeDevice(device Device, transportAddress, transportSer
 		}
 	}
 
-	logrus.Warnf("No NVMe controller matched address %s:%s or recorded name %q for subsystem %s, falling back to first controller %s",
-		transportAddress, transportServiceID, recordedControllerName, device.SubsystemNQN, device.Controllers[0].Controller)
+	// A dead path left over from a previous target is indistinguishable from the
+	// current one by position, so never let it win the fallback.
+	for _, controller := range device.Controllers {
+		if controller.State == NvmeControllerStateLive {
+			return controller, nil
+		}
+	}
+
+	logrus.Warnf("No NVMe controller matched address %s:%s or recorded name %q for subsystem %s and none is live, falling back to first controller %s in %q state",
+		transportAddress, transportServiceID, recordedControllerName, device.SubsystemNQN, device.Controllers[0].Controller, device.Controllers[0].State)
 	return device.Controllers[0], nil
 }
 

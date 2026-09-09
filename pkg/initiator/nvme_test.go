@@ -43,6 +43,7 @@ const (
 	// native multipath leaves behind after a switchover.
 	testSecondLivePath = `{"Name":"nvme3","Transport":"tcp","Address":"traddr=10.0.0.4,trsvcid=20345","State":"live"}`
 	testDeviceList     = `{"Devices":[{"DevicePath":"/dev/nvme0n1","Namespace":1,"SectorSize":512}]}`
+	testEmptyList      = `{"Devices":[]}`
 	// testMixedDeviceList also lists a device of another subsystem, which is what a
 	// host scan actually returns.
 	testMixedDeviceList = `{"Devices":[{"DevicePath":"/dev/nvme0n1","Namespace":1,"SectorSize":512},{"DevicePath":"` + testOtherDevicePath + `","Namespace":1,"SectorSize":512}]}`
@@ -110,6 +111,23 @@ func (s *InitiatorTestSuite) TestGetDevicesIgnoresPathBeingTornDown(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(devices, HasLen, 1)
 	c.Assert(devices[0].Namespaces[0].NameSpace, Equals, "nvme0n1")
+}
+
+// The missing device is the real problem; a path on its way out must not be reported
+// in its place.
+func (s *InitiatorTestSuite) TestGetDevicesReportsMissingDeviceNotDyingPath(c *C) {
+	restorePath := setupFakeCommandPath(c, map[string]string{
+		"nvme": fakeNvmeScript(testEmptyList, "", testDeletingPath),
+	})
+	defer restorePath()
+
+	executor, err := newExecutorWithoutNamespace()
+	c.Assert(err, IsNil)
+
+	_, err = GetDevices("", "", testSubsystemNQN, executor)
+	c.Assert(err, NotNil)
+	c.Assert(strings.Contains(err.Error(), "deleting state"), Equals, false)
+	c.Assert(strings.Contains(err.Error(), "cannot find a valid NVMe device"), Equals, true)
 }
 
 // A path the kernel is still failing must be left to ctrl_loss_tmo: disconnecting it

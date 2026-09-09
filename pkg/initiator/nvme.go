@@ -326,6 +326,11 @@ func GetDevices(ip, port, nqn string, executor *commonns.Executor) (devices []De
 				continue
 			}
 			for _, path := range sys.Paths {
+				// A path the kernel is already tearing down explains nothing about why
+				// the device is missing, and reporting it hides the real state.
+				if strings.HasPrefix(path.State, NvmeControllerStateDeleting) {
+					continue
+				}
 				return nil, fmt.Errorf("subsystem NQN %s path %v address %v is in %s state",
 					nqn, path.Name, path.Address, path.State)
 			}
