@@ -1360,10 +1360,35 @@ func (i *Initiator) removeEndpoint() error {
 	return nil
 }
 
+// isDmDeviceExist asks device-mapper whether the linear dm device exists.
+//
+// The node under /dev/mapper is created by udev, which lags or blocks entirely when a
+// backing device is unresponsive. Trusting it makes a live dm device look absent, and
+// the following create then fails with EBUSY forever.
+func (i *Initiator) isDmDeviceExist() (bool, error) {
+	devices, err := util.DmsetupInfo(i.Name, i.executor)
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "device does not exist") {
+			return false, nil
+		}
+		return false, err
+	}
+
+	for _, device := range devices {
+		if device.Name == i.Name {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (i *Initiator) removeLinearDmDevice(force, deferred bool) error {
-	dmDevPath := getDmDevicePath(i.Name)
-	if _, err := os.Stat(dmDevPath); err != nil {
+	exist, err := i.isDmDeviceExist()
+	if err != nil {
 		return err
+	}
+	if !exist {
+		return os.ErrNotExist
 	}
 
 	i.logger.Info("Removing linear dm device")
@@ -1389,6 +1414,12 @@ func (i *Initiator) createLinearDmDevice() error {
 		return err
 	}
 
+	// Do not wait for udev to publish the node: it can be blocked on an unresponsive
+	// backing device. This is a no-op once the node is there.
+	if err := util.DmsetupMknodes(i.Name, i.executor); err != nil {
+		i.logger.WithError(err).Warn("Failed to create the node of the linear dm device, falling back to udev")
+	}
+
 	dmDevPath := getDmDevicePath(i.Name)
 	if err := i.validateDiskCreation(dmDevPath, validateDiskCreationMaxRetries, validateDiskCreationRetryInterval); err != nil {
 		return err
@@ -1402,6 +1433,12 @@ func (i *Initiator) createLinearDmDevice() error {
 func (i *Initiator) loadDmDeviceNumbers() error {
 	if i.dev == nil {
 		return fmt.Errorf("found nil device for linear dm device number loading")
+	}
+
+	// The numbers are read through the /dev/mapper node, and callers that did not just
+	// create the device have no other reason to have published it.
+	if err := util.DmsetupMknodes(i.Name, i.executor); err != nil {
+		i.logger.WithError(err).Warn("Failed to create the node of the linear dm device, falling back to udev")
 	}
 
 	major, minor, err := util.GetDeviceNumbers(getDmDevicePath(i.Name), i.executor)

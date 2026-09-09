@@ -635,6 +635,35 @@ func (s *InitiatorTestSuite) TestReplaceDmDeviceTargetReloadsOnReusedDeviceName(
 	c.Assert(i.replaceDmDeviceTarget(), ErrorMatches, ".*failed to suspend.*")
 }
 
+// The dm device is removed based on what device-mapper reports, so a node udev never
+// published does not make the removal look unnecessary.
+func (s *InitiatorTestSuite) TestRemoveLinearDmDeviceIgnoresMissingUdevNode(c *C) {
+	restorePath := setupFakeCommandPath(c, map[string]string{
+		"dmsetup": fakeDmsetupScript("nvme0n1", true),
+	})
+	defer restorePath()
+
+	i := newReplaceTargetTestInitiator(c)
+
+	c.Assert(getDmDevicePath(i.Name), Not(Equals), "")
+	if _, err := os.Stat(getDmDevicePath(i.Name)); !os.IsNotExist(err) {
+		c.Skip("the test requires the dm device node to be absent")
+	}
+
+	c.Assert(i.removeLinearDmDevice(false, false), IsNil)
+}
+
+func (s *InitiatorTestSuite) TestRemoveLinearDmDeviceReportsMissingDevice(c *C) {
+	restorePath := setupFakeCommandPath(c, map[string]string{
+		"dmsetup": "#!/bin/sh\necho 'Device does not exist.' >&2\nexit 1\n",
+	})
+	defer restorePath()
+
+	i := newReplaceTargetTestInitiator(c)
+
+	c.Assert(os.IsNotExist(i.removeLinearDmDevice(false, false)), Equals, true)
+}
+
 func TestSelectControllerForNVMeDeviceSkipsStaleController(t *testing.T) {
 	device := Device{
 		SubsystemNQN: "nqn.test",

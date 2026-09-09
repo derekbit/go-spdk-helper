@@ -75,6 +75,16 @@ func DmsetupRemove(dmDeviceName string, force, deferred bool, executor *commonns
 	return err
 }
 
+// DmsetupMknodes creates the /dev/mapper node of the device mapper device. This is
+// normally udev's job, which can lag or block when a backing device is unresponsive.
+func DmsetupMknodes(dmDeviceName string, executor *commonns.Executor) error {
+	opts := []string{
+		"mknodes", dmDeviceName,
+	}
+	_, err := executor.Execute(nil, dmsetupBinary, opts, types.ExecuteTimeout)
+	return err
+}
+
 // DmsetupDeps returns the dependent devices of the device mapper device with the given name
 func DmsetupDeps(dmDeviceName string, executor *commonns.Executor) ([]string, error) {
 	opts := []string{
