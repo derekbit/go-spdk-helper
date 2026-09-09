@@ -20,7 +20,7 @@ func DmsetupCreate(dmDeviceName, table string, executor *commonns.Executor) erro
 	opts := []string{
 		"create", dmDeviceName, "--table", table,
 	}
-	_, err := executor.Execute(nil, dmsetupBinary, opts, types.ExecuteTimeout)
+	_, err := executor.Execute(nil, dmsetupBinary, opts, types.DmsetupTimeout)
 	return err
 }
 
@@ -38,16 +38,16 @@ func DmsetupSuspend(dmDeviceName string, noflush, nolockfs bool, executor *commo
 		opts = append(opts, "--nolockfs")
 	}
 
-	_, err := executor.Execute(nil, dmsetupBinary, opts, types.ExecuteTimeout)
+	_, err := executor.Execute(nil, dmsetupBinary, opts, types.DmsetupTimeout)
 	return err
 }
 
-// DmsetupResume removes the device mapper device with the given name
+// DmsetupResume resumes the suspended device mapper device with the given name
 func DmsetupResume(dmDeviceName string, executor *commonns.Executor) error {
 	opts := []string{
 		"resume", dmDeviceName,
 	}
-	_, err := executor.Execute(nil, dmsetupBinary, opts, types.ExecuteTimeout)
+	_, err := executor.Execute(nil, dmsetupBinary, opts, types.DmsetupTimeout)
 	return err
 }
 
@@ -56,7 +56,7 @@ func DmsetupReload(dmDeviceName, table string, executor *commonns.Executor) erro
 	opts := []string{
 		"reload", dmDeviceName, "--table", table,
 	}
-	_, err := executor.Execute(nil, dmsetupBinary, opts, types.ExecuteTimeout)
+	_, err := executor.Execute(nil, dmsetupBinary, opts, types.DmsetupTimeout)
 	return err
 }
 
@@ -71,7 +71,7 @@ func DmsetupRemove(dmDeviceName string, force, deferred bool, executor *commonns
 	if deferred {
 		opts = append(opts, "--deferred")
 	}
-	_, err := executor.Execute(nil, dmsetupBinary, opts, types.ExecuteTimeout)
+	_, err := executor.Execute(nil, dmsetupBinary, opts, types.DmsetupTimeout)
 	return err
 }
 
@@ -81,7 +81,7 @@ func DmsetupMknodes(dmDeviceName string, executor *commonns.Executor) error {
 	opts := []string{
 		"mknodes", dmDeviceName,
 	}
-	_, err := executor.Execute(nil, dmsetupBinary, opts, types.ExecuteTimeout)
+	_, err := executor.Execute(nil, dmsetupBinary, opts, types.DmsetupTimeout)
 	return err
 }
 
@@ -91,7 +91,7 @@ func DmsetupDeps(dmDeviceName string, executor *commonns.Executor) ([]string, er
 		"deps", dmDeviceName, "-o", "devname",
 	}
 
-	outputStr, err := executor.Execute(nil, dmsetupBinary, opts, types.ExecuteTimeout)
+	outputStr, err := executor.Execute(nil, dmsetupBinary, opts, types.DmsetupTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -174,7 +174,7 @@ func DmsetupInfo(dmDeviceName string, executor *commonns.Executor) ([]*DeviceInf
 		dmDeviceName,
 	}
 
-	outputStr, err := executor.Execute(nil, dmsetupBinary, opts, types.ExecuteTimeout)
+	outputStr, err := executor.Execute(nil, dmsetupBinary, opts, types.DmsetupTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -233,7 +233,7 @@ func DmsetupInfoDeferredRemove(dmDeviceName string, executor *commonns.Executor)
 		"info", dmDeviceName,
 	}
 
-	outputStr, err := executor.Execute(nil, dmsetupBinary, opts, types.ExecuteTimeout)
+	outputStr, err := executor.Execute(nil, dmsetupBinary, opts, types.DmsetupTimeout)
 	if err != nil {
 		return false, err
 	}

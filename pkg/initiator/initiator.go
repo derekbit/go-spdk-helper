@@ -173,7 +173,7 @@ func (i *Initiator) newLock(operation string) (*initiatorLock, error) {
 	lockFile := i.lockFilePath()
 	lock := commonns.NewLock(lockFile, LockTimeout)
 	if err := lock.Lock(); err != nil {
-		return nil, errors.Wrapf(err, "failed to get file lock for initiator %s", i.Name)
+		return nil, errors.Wrapf(err, types.ErrorMessageFailedToGetInitiatorLock+" %s", i.Name)
 	}
 
 	il := &initiatorLock{
