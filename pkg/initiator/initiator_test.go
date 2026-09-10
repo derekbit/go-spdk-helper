@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -662,6 +663,43 @@ func (s *InitiatorTestSuite) TestRemoveLinearDmDeviceReportsMissingDevice(c *C) 
 	i := newReplaceTargetTestInitiator(c)
 
 	c.Assert(os.IsNotExist(i.removeLinearDmDevice(false, false)), Equals, true)
+}
+
+// recordingDmsetupScript reports an existing device and appends every invocation to
+// argsFile.
+func recordingDmsetupScript(argsFile string) string {
+	return `#!/bin/sh
+echo "$@" >> ` + argsFile + `
+case "$1" in
+	info)
+		if [ "$2" = "--columns" ]; then
+			echo "vol-replace 253:7 L--w 253 7 1 1 0"
+		else
+			echo "State:             ACTIVE"
+		fi
+		;;
+esac
+exit 0
+`
+}
+
+// udev is one of the things that stops responding, so the removal must not wait on it
+// and the node it would have dropped is reconciled here instead.
+func (s *InitiatorTestSuite) TestRemoveLinearDmDeviceDoesNotWaitForUdev(c *C) {
+	argsFile := filepath.Join(c.MkDir(), "args")
+	restorePath := setupFakeCommandPath(c, map[string]string{
+		"dmsetup": recordingDmsetupScript(argsFile),
+	})
+	defer restorePath()
+
+	i := newReplaceTargetTestInitiator(c)
+
+	c.Assert(i.removeLinearDmDevice(false, false), IsNil)
+
+	recorded, err := os.ReadFile(argsFile)
+	c.Assert(err, IsNil)
+	c.Assert(strings.Contains(string(recorded), "--noudevsync remove vol-replace"), Equals, true)
+	c.Assert(strings.Contains(string(recorded), "mknodes"), Equals, true)
 }
 
 func TestSelectControllerForNVMeDeviceSkipsStaleController(t *testing.T) {

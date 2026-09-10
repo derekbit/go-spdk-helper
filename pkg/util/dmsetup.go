@@ -13,12 +13,18 @@ import (
 
 const (
 	dmsetupBinary = "dmsetup"
+
+	// noUdevSyncOption stops dmsetup from waiting for udev to publish the node change.
+	// udev blocks when a backing device stops responding, and the wait would then
+	// outlast a command whose ioctl has already succeeded, reporting a failure for
+	// work that was done. The nodes are reconciled with mknodes instead.
+	noUdevSyncOption = "--noudevsync"
 )
 
 // DmsetupCreate creates a device mapper device with the given name and table
 func DmsetupCreate(dmDeviceName, table string, executor *commonns.Executor) error {
 	opts := []string{
-		"create", dmDeviceName, "--table", table,
+		noUdevSyncOption, "create", dmDeviceName, "--table", table,
 	}
 	_, err := executor.Execute(nil, dmsetupBinary, opts, types.DmsetupTimeout)
 	return err
@@ -63,7 +69,7 @@ func DmsetupReload(dmDeviceName, table string, executor *commonns.Executor) erro
 // DmsetupRemove removes the device mapper device with the given name
 func DmsetupRemove(dmDeviceName string, force, deferred bool, executor *commonns.Executor) error {
 	opts := []string{
-		"remove", dmDeviceName,
+		noUdevSyncOption, "remove", dmDeviceName,
 	}
 	if force {
 		opts = append(opts, "--force")
@@ -75,11 +81,15 @@ func DmsetupRemove(dmDeviceName string, force, deferred bool, executor *commonns
 	return err
 }
 
-// DmsetupMknodes creates the /dev/mapper node of the device mapper device. This is
-// normally udev's job, which can lag or block when a backing device is unresponsive.
+// DmsetupMknodes reconciles the /dev/mapper nodes with what device-mapper reports.
+// An empty name covers every device, which is how a node left behind by a removal is
+// dropped now that dmsetup does not wait for udev to do it.
 func DmsetupMknodes(dmDeviceName string, executor *commonns.Executor) error {
 	opts := []string{
-		"mknodes", dmDeviceName,
+		"mknodes",
+	}
+	if dmDeviceName != "" {
+		opts = append(opts, dmDeviceName)
 	}
 	_, err := executor.Execute(nil, dmsetupBinary, opts, types.DmsetupTimeout)
 	return err

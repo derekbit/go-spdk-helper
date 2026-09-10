@@ -1392,7 +1392,16 @@ func (i *Initiator) removeLinearDmDevice(force, deferred bool) error {
 	}
 
 	i.logger.Info("Removing linear dm device")
-	return util.DmsetupRemove(i.Name, force, deferred, i.executor)
+	if err := util.DmsetupRemove(i.Name, force, deferred, i.executor); err != nil {
+		return err
+	}
+
+	// Nothing announces the removal now, so drop the node instead of leaving one that
+	// points at a device that is gone.
+	if err := util.DmsetupMknodes("", i.executor); err != nil {
+		i.logger.WithError(err).Warn("Failed to reconcile the device mapper nodes after removing the linear dm device")
+	}
+	return nil
 }
 
 func (i *Initiator) createLinearDmDevice() error {
@@ -1414,8 +1423,7 @@ func (i *Initiator) createLinearDmDevice() error {
 		return err
 	}
 
-	// Do not wait for udev to publish the node: it can be blocked on an unresponsive
-	// backing device. This is a no-op once the node is there.
+	// dmsetup no longer waits for udev, so the node is ours to publish.
 	if err := util.DmsetupMknodes(i.Name, i.executor); err != nil {
 		i.logger.WithError(err).Warn("Failed to create the node of the linear dm device, falling back to udev")
 	}
